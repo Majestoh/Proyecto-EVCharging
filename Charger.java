@@ -1,196 +1,135 @@
-import java.sql.Array;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Modela una unidad de cargador dentro de una {@link ChargingStation}.
- * Rastrea sus capacidades de carga, tarifa, estado y vehículos que ha recargado.
- *
+ * Clase abstracta que modela un cargador genérico.
+ * <p>
+ * Implementa el patrón de diseño <b>Template Method</b> en el método {@link
+ * #recharge},
+ * definiendo el esqueleto del algoritmo de carga y delegando los detalles específicos
+ * (compatibilidad y cálculo de costes) a las subclases.
+ * </p>
+ * 
  * @author Pablo Carrasco Caballero
- * @version 2025
+ * @version 2025.11.25
  */
-public class Charger {
-    // --- Atributos ---
-    private String id;
-    private int velocidadCarga;
-    private float tarifaCarga;
-    private List<ElectricVehicle> vehiculosRecargados;
-    private float cantidadRecaudada;
-    private boolean estaLibre;
-
+public abstract class Charger {
+    // --- Atributos Comunes ---
+    
+    protected String id;
+    protected int velocidadCarga;
+    protected float tarifaCarga;
+    protected List<ElectricVehicle> vehiculosRecargados;
+    protected float cantidadRecaudada;
+    protected boolean estaLibre;
+    
     // --- Constructor ---
-
-    /**
-     * Constructor para objetos de la clase Charger.
-     *
-     * @param id El identificador único del cargador.
-     * @param speed La velocidad máxima de carga en kWh.
-     * @param fee El coste por kWh.
-     */
-    public Charger(String id, int speed, float fee) {
-        String idCargador = id;
-        int velocidad = speed;
-        float tarifa = fee;
-
-        this.id = idCargador;
-        this.velocidadCarga = velocidad;
-        this.tarifaCarga = tarifa;
-
+    
+    public Charger(String id, int velocidadCarga, float tarifaCarga) {
+        this.id = id;
+        this.velocidadCarga = velocidadCarga;
+        this.tarifaCarga = tarifaCarga;
         this.vehiculosRecargados = new ArrayList<>();
         this.cantidadRecaudada = 0.0f;
         this.estaLibre = true;
     }
-
-    // --- Getters ---
-
+    
+    // -- Patrón Template Method (método plantilla) ---
+    
     /**
-     * Devuelve el ID del cargador.
-     *
-     * @return El 'id' del cargador.
+     * Realiza el proceso de carga de un vehículo siguiendo un algoritmo definido.
+     * (patrón template method)
+     * <ol>
+     * <li>Comprueba la compatibilidad (paso abstracto).</li>
+     * <li>Calcula el coste (paso extensible).</li>
+     * <li>Actualiza métricas (paso concreto).</li>
+     * </ol>
+     * 
+     * @param vehiculo El vehiculo que solicita la carga.
+     * @param kwhARecargar La cantidad de energía a suministrar.
+     * @return El coste de la carga si es exitosa, o -1.0f si no es compatible.
      */
-    public String getId() {
-        return this.id;
+    public final float recharge(ElectricVehicle vehiculo, int kwhARecargar) {
+        // Paso 1: comprobar compatibilidad (definido por las subclases)
+        if(!esCompatible(vehiculo)) {
+            // Si no es compatible, no realizamos la recarga.
+            return -1.0f; // Código de error o coste 0.
+        }
+        
+        // Paso 2: calcular el precio de la carga (puede ser sobreescrito por las subclases)
+        float coste = calcularCoste(kwhARecargar);
+        
+        // Paso 3: actualizar métricas internas (común para todos)
+        actualizarMetricas(vehiculo, coste);
+        
+        return coste;
     }
-
+    
+    // --- Métodos abstractos y hooks (para los hijos) ---
+    
     /**
-     * Devuelve la velocidad de carga del cargador.
-     *
-     * @return La velocidad de carga en kWh.
+     * Comprueba si este cargador es compatible con el tipo de vehículo dado.
+     * Cada tipo de cargador define sus propias reglas de compatibilidad.
+     * 
+     * @param vehiculo El vehiculo a comprobar.
+     * @return true si es compatible, false en caso contrario.
      */
-    public int getVelocidadCarga() {
-        return this.velocidadCarga;
+    protected abstract boolean esCompatible(ElectricVehicle vehiculo);
+    
+    /**
+     * Calcula el coste de la carga.
+     * La implementación base es (kwh * tarifa), pero las subclases pueden
+     * aplicar descuentos o recargos (override)
+     * 
+     * @param kwh Cantidad de energía.
+     * @return Precio final en euros.
+     */
+    protected float calcularCoste(int kwh) {
+        return kwh * this.tarifaCarga;
     }
-
+    
+    // --- Métodos internos ---
+    
     /**
-     * Devuelve la tarifa de carga del cargador.
-     *
-     * @return La tarifa de carga en €/kWh.
+     * Actualiza el registro de vehículos y la recaudación.
      */
-    public float getTarifaCarga() {
-        return this.tarifaCarga;
-    }
-
-    /**
-     * Devuelve la cantidad total recaudada por este cargador.
-     *
-     * @return La cantidad recaudada en €.
-     */
-    public float getCantidadRecaudada() {
-        return this.cantidadRecaudada;
-    }
-
-    /**
-     * Devuelve el número total de vehículos que han recargado aquí.
-     *
-     * @return El número de vehículos en la lista 'vehiculosRecargados'.
-     */
-    public int getNumerEVRecharged() {
-        return this.vehiculosRecargados.size();
-    }
-
-    /**
-     * Comprueba si el cargador está libre.
-     *
-     * @return {@code true} si está libre {@code false} si está ocupado.
-     */
-    public boolean estaLibre() {
-        return this.estaLibre;
-    }
-
-    // --- Setters ---
-
-    /**
-     * Establece el estado del cargador.
-     * La clase ElectricVehicle usará esto al empezar y terminar una carga.
-     *
-     * @param estado {@code true} para marcar como libre, {@code false} para marcar como ocupado.
-     */
-    public void setEstaLibre(boolean estado) {
-        this.estaLibre = estado;
-    }
-
-    /**
-     * Añade un {@link ElectricVehicle} a la lista de vehículos recargados.
-     *
-     * @param vehicle El vehículo eléctrico.
-     */
-    public void addEvRecharged(ElectricVehicle vehicle) {
-        ElectricVehicle vehiculo = vehicle;
-
-        if (vehiculo != null) {
+    private void actualizarMetricas(ElectricVehicle vehiculo, float coste) {
+        this.cantidadRecaudada += coste;
+        
+        if(vehiculo != null) {
             this.vehiculosRecargados.add(vehiculo);
         }
     }
-
+    
+    // -- Getters y setters comunes ---
+    
+    public String getId() { return id; }
+    public int getVelocidadCarga() { return velocidadCarga; }
+    public float getTarifaCarga() { return tarifaCarga; }
+    public boolean estaLibre() { return estaLibre; }
+    public void setEstaLibre(boolean estaLibre) { this.estaLibre = estaLibre; }
+    public int getNumerEVRecharged() { return this.vehiculosRecargados.size(); }
+    public float getCantidadRecaudada() { return cantidadRecaudada; }
+    
+    // --- Métodos de información (toString) ---
+    
     /**
-     * Actualiza la cantidad total recaudada.
-     *
-     * @param cantidad El coste de la recarga recién realizada.
-     */
-    private void actualizarCantidadRecaudada(float cantidad) {
-        this.cantidadRecaudada += cantidad;
-    }
-
-    // --- Métodos ppales. ---
-
-    /**
-     * Simula el proceso de redcarga para un {@link ElectricVehicle}.
-     * Calcula el coste, actualiza la cantidad recuadada y registra el vehículo como recargado.
-     *
-     * @param vehicle El vehículo a recargar.
-     * @param kwsRecharging La cantidad de kWh a recargar.
-     *
-     * @return El coste total de esta operación.
-     */
-    public float recharge(ElectricVehicle vehicle, int kwsRecharging) {
-        ElectricVehicle vehiculo = vehicle;
-        int kwhARecargar = kwsRecharging;
-
-        float costeRecarga = kwhARecargar * this.tarifaCarga;
-
-        this.actualizarCantidadRecaudada(costeRecarga);
-
-        this.addEvRecharged(vehiculo);
-
-        return costeRecarga;
-    }
-
-    // --- Métodos de información ---
-
-    /**
-     * Devuelve una representación en String del cargador.
-     * Formato: (Charger: ID, Velocidad, Tarifa, VehiculosRecargados, CantidadRecuadada)
-     *
-     * @return Una cadena formateada con la información del cargador.
-     */
-    @Override
-    public String toString() {
-        return String.format(java.util.Locale.US, "(Charger, %s, %dkwh, %.1f€, %d, %.1f€)",
-                this.id,
-                this.velocidadCarga,
-                this.tarifaCarga,
-                this.getNumerEVRecharged(),
-                this.cantidadRecaudada);
-    }
-
-    /**
-     * Devuelve uan representación COMPLETA en String del cargador.
-     * Incluye la información del propio cargador y la información de CADA vehículo que ha
-     * recargado en él.
-     *
-     * @return Una cadena de varias líneas con la info. completa del cargador.
+     * Devuelve la información completa del cargador y su historial.
      */
     public String getCompleteInfo() {
         StringBuilder info = new StringBuilder();
-
         info.append(this.toString());
-
-        for (ElectricVehicle vehiculo : this.vehiculosRecargados) {
+        for(ElectricVehicle vehiculo : this.vehiculosRecargados) {
             info.append("\n");
-
             info.append(vehiculo.getInitialFinalInfo());
         }
-
         return info.toString();
     }
+    
+    // El toString será implementado/usado por las subclases, pero podemos dejar uno base
+    // o forzar a que lo implementen si queremos que aparezca el nombre de la clase (ej: StandardCharger).
+    // Para simplificar, lo dejamos aquí y usaremos getClass().getSimpleName() o similar en
+    // los hijos.
+    @Override
+    public abstract String toString();
 }

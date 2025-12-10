@@ -1,183 +1,100 @@
 import static org.junit.Assert.*;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Pruebas unitarias para la clase {@link ElectricVehicle}.
- * Requisitos extra (fuente 256-260).
+ * Clase de pruebas para ElectricVehicle y sus subclases.
+ * Verifica creación, cálculo de batería y estrategias de selección de estación.
  *
- * @author IA para docencia
- * @version 2025.11.04
+ * @author DP classes (Modificado por IA para docencia)
+ * @version 2025.11.18
  */
 public class ElectricVehicleTest
 {
-    // --- Fixtures (fuente 264) ---
     private EVCompany company;
-    private Location locInicio;
-    private Location locDestinoLejano; // Destino que requiere recarga
-    private Location locDestinoCercano; // Destino que NO requiere recarga
-    private Location locEstacion;
-    private ChargingStation estacionPrueba;
-    private ElectricVehicle evPrueba;
+    private ChargingStation estBarata, estRapida;
+    private Location start, end;
 
-    /**
-     * Constructor por defecto
-     */
-    public ElectricVehicleTest()
-    {
-    }
-
-    /**
-     * Prepara el entorno de prueba (Fixtures).
-     * Se llama ANTES de cada método de prueba (@Test).
-     */
     @Before
     public void setUp()
     {
-        // 1. Crear compañía y localizaciones
-        company = new EVCompany();
-        locInicio = new Location(0, 0);
-        locDestinoCercano = new Location(5, 5); // Distancia = 5 pasos
-        locDestinoLejano = new Location(10, 10); // Distancia = 10 pasos
-        locEstacion = new Location(2, 2);       // Distancia = 2 pasos
-
-        // 2. Crear y configurar la estación
-        estacionPrueba = new ChargingStation("Caceres", "ST-01", locEstacion);
-        estacionPrueba.addCharger(new Charger("ST-01_01", 80, 0.8f));
-        company.addChargingStation(estacionPrueba); // Añadir la estación a la compañía
-
-        // 3. Crear el vehículo
-        // Capacidad: 80 kwh
-        evPrueba = new ElectricVehicle(company, locInicio, locDestinoLejano, "TestEV", "1234ABC", 80);
+        company = EVCompany.getInstance();
+        company.reset();
         
-        // 4. Establecer un nivel de batería inicial para las pruebas
-        // (50 kwh)
-        evPrueba.setNivelBateria(50);
+        start = new Location(0,0);
+        end = new Location(10,10); // Distancia 10
+        
+        // Estación 1: Barata pero Lenta (en (5,5))
+        estBarata = new ChargingStation("Caceres", "LOW_COST", new Location(5,5));
+        estBarata.addCharger(new StandardCharger("CH1", 20, 0.1f)); // Tarifa 0.1
+        estBarata.addCharger(new SolarCharger("CH2", 20, 0.1f));    // Tarifa 0.1
+        
+        // Estación 2: Rápida pero Cara (en (6,6))
+        estRapida = new ChargingStation("Caceres", "FAST", new Location(6,6));
+        estRapida.addCharger(new UltraFastCharger("CH3", 200, 0.9f)); // Vel 200
+        
+        company.addChargingStation(estBarata);
+        company.addChargingStation(estRapida);
     }
 
     /**
-     * Limpia el entorno de prueba.
-     * Se llama DESPUÉS de cada método de prueba (@Test).
-     */
-    @After
-    public void tearDown()
-    {
-        company = null;
-        locInicio = null;
-        locDestinoLejano = null;
-        locDestinoCercano = null;
-        locEstacion = null;
-        estacionPrueba = null;
-        evPrueba = null;
-    }
-
-    /**
-     * Prueba la creación (constructor) del ElectricVehicle (fuente 257).
-     * Comprueba que los campos iniciales se establecen correctamente.
+     * Prueba la inicialización correcta de campos.
      */
     @Test
     public void testCreation()
     {
-        // (Usamos los objetos creados en setUp)
-        assertNotNull(evPrueba.getLocation());
-        assertEquals(locInicio, evPrueba.getLocation());
-        assertEquals(locDestinoLejano, evPrueba.getTargetLocation());
-        assertEquals(0, evPrueba.getChargesCount());
-        assertEquals(0, evPrueba.getIdleCount());
-        
-        // Comprueba que la batería inicial se puso a 50 (en setUp)
-        // evPrueba.toString() -> "... 80kwh, 50kwh, ..."
-        assertTrue(evPrueba.toString().contains("80kwh, 50kwh"));
+        ElectricVehicle ev = new StandardEV(company, start, end, "Test", "0000", 50);
+        assertEquals(50, ev.capacidadBateria); // Acceso paquete/protected para test
+        assertEquals(0, ev.getChargesCount());
+        assertEquals(start, ev.getLocation());
     }
-    
+
     /**
-     * Prueba el método 'enoughBattery' (fuente 258).
+     * Prueba el cálculo de batería suficiente.
+     * Distancia (0,0) a (10,10) = 10 pasos * 5 kwh = 50 kwh necesarios.
      */
     @Test
     public void testEnoughBattery()
     {
-        // Batería actual = 50 kwh (de setUp)
-        // Coste movimiento = 5 kwh/paso (de EVCompany)
+        ElectricVehicle ev = new StandardEV(company, start, end, "Test", "0000", 60);
+        // Con 60kwh (lleno), debería tener suficiente para 10 pasos (50kwh)
+        assertTrue(ev.enoughBattery(10));
         
-        // 1. Prueba destino cercano (Distancia 5)
-        // Coste necesario = 5 pasos * 5 kwh/paso = 25 kwh
-        // Batería (50) >= Coste (25) -> Debería ser TRUE
-        int distCercana = evPrueba.getLocation().distance(locDestinoCercano); // 5
-        assertTrue(evPrueba.enoughBattery(distCercana));
-
-        // 2. Prueba destino lejano (Distancia 10)
-        // Coste necesario = 10 pasos * 5 kwh/paso = 50 kwh
-        // Batería (50) >= Coste (50) -> Debería ser TRUE (justo)
-        int distLejana = evPrueba.getLocation().distance(locDestinoLejano); // 10
-        assertTrue(evPrueba.enoughBattery(distLejana));
-        
-        // 3. Prueba destino muy lejano (Distancia 11)
-        // Coste necesario = 11 pasos * 5 kwh/paso = 55 kwh
-        // Batería (50) < Coste (55) -> Debería ser FALSE
-        assertFalse(evPrueba.enoughBattery(11));
+        // Vaciamos batería a 40kwh
+        ev.setNivelBateria(40);
+        assertFalse(ev.enoughBattery(10));
     }
 
     /**
-     * Prueba el método 'calculateRoute' (fuente 259).
+     * Prueba la estrategia de VtcEV: Debe elegir la estación más BARATA.
      */
     @Test
-    public void testCalculateRoute()
+    public void testVtcStrategy()
     {
-        // --- Escenario 1: Batería suficiente ---
-        // Batería = 50 kwh. Destino Lejano (10,10) requiere 50 kwh.
-        // Tiene batería suficiente (justa).
-        evPrueba.calculateRoute();
-        // El destino de recarga debería ser NULL
-        assertNull(evPrueba.getRechargingLocation());
-
-        // --- Escenario 2: Batería insuficiente ---
-        // Bajamos la batería a 49 kwh.
-        evPrueba.setNivelBateria(49);
-        // Ahora, el destino Lejano (10,10) requiere 50 kwh (no tiene).
-        // Debe buscar una estación.
-        // La estación (2,2) requiere 2 pasos * 5 kwh/paso = 10 kwh.
-        // Tiene 49 kwh, así que puede llegar a la estación.
+        // VTC tiene poca batería, necesita cargar
+        ElectricVehicle vtc = new VtcEV(company, start, end, "VTC", "VTC1", 20); // 20kwh no llega a 50kwh
         
-        evPrueba.calculateRoute();
+        // Forzamos cálculo de ruta
+        vtc.calculateRoute();
         
-        // El destino de recarga NO debería ser null
-        assertNotNull(evPrueba.getRechargingLocation());
-        // El destino de recarga debe ser la localización de la estación
-        assertEquals(locEstacion, evPrueba.getRechargingLocation());
+        // Debería haber elegido la estación BARATA (estBarata), no la rápida
+        assertNotNull(vtc.localizacionRecarga);
+        assertEquals(estBarata.getLocation(), vtc.localizacionRecarga);
     }
-    
+
     /**
-     * Prueba el método 'recharge' de ElectricVehicle (fuente 260).
-     * (Este prueba la lógica de EV, no la de Charger).
+     * Prueba la estrategia de PremiumEV: Debe elegir la estación más RÁPIDA.
      */
     @Test
-    public void testRecharge()
+    public void testPremiumStrategy()
     {
-        // 1. Mover el vehículo a la estación
-        evPrueba.setLocation(locEstacion);
+        // Premium con poca batería
+        ElectricVehicle prem = new PremiumEV(company, start, end, "Prem", "PRM1", 20);
         
-        // 2. Bajar la batería a 30 kwh (Capacidad es 80)
-        evPrueba.setNivelBateria(30);
+        prem.calculateRoute();
         
-        // 3. Llamar a recharge (que es parte de 'act', pero lo llamamos directo)
-        // El método recharge() interno de EV es privado, así que
-        // simulamos el paso 'act' estando en la estación.
-        
-        // evPrueba.recharge(1); // Llamamos al método recharge(step)
-        
-        // Corrección: El método recharge(step) SÍ es público.
-        evPrueba.recharge(1); // Simula la recarga en el paso 1
-
-        // 4. Comprobar resultados
-        // Aserción 1: La batería debe estar llena (80 kwh)
-        // Usamos el toString() para verificar el nivel de batería
-        assertTrue(evPrueba.toString().contains("80kwh, 80kwh"));
-        
-        // Aserción 2: El contador de recargas debe ser 1
-        assertEquals(1, evPrueba.getChargesCount());
-        
-        // Aserción 3: El coste debe haberse actualizado (50kwh * 0.8€ = 40.0€)
-        assertTrue(evPrueba.toString().contains("1, 40.0€"));
+        // Debería haber elegido la estación RÁPIDA (estRapida)
+        assertNotNull(prem.localizacionRecarga);
+        assertEquals(estRapida.getLocation(), prem.localizacionRecarga);
     }
 }

@@ -2,299 +2,311 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.io.*; // NECESARIO PARA EL MANEJO DE FICHEROS
 
 /**
- * Proporciona una demo simple y un entorno de simulación para el
- * modelo de Vehículos Eléctricos (VE) y Estaciones de Carga.
- * Configura el entorno y ejecuta la simulación durante un número fijo de pasos.
- *
- * Escenarios:
- * <ul>
- *     <li> Demo SIMPLE (demo=DemoType.SIMPLE): se crean 2 vehículos.</li>
- *     <li> Demo MEDIUM (demo=DemoType.MEDIUM): se crean 5 vehículos.</li>
- *     <li> Demo ADVANCED (demo=DemoType.ADVANCED): se crean 8 vehículos.</li>
- * </ul>
- *
+ * Clase principal que configura y ejecuta la simulación.
+ * 
  * @author Pablo Carrasco Caballero
- * @version 2025
+ * @version 10.12.2025
  */
 public class EVDemo {
+    
+    // CONSTANTES DE CONFIGURACIÓN
     public static final int MAXX = 20;
     public static final int MAXY = 20;
-
     public static final int MAXSTEPS = 50;
-
-    private EVCompany compania;
-
-    /**
-     * Los vehículos de la simulación son los vehículos eléctricos de la compañía.
-     * @see ElectricVehicle
-     */
-    private List<ElectricVehicle> vehiculos;
-
-    /**
-     * Las estaciones de carga disponibles en la ciudad.
-     * @see ChargingStation
-     */
-    private List<ChargingStation> estaciones;
-
-    /**
-     * Constante para seleccionar el escenario de la demo.
-     * Utiliza la enumeración {@link DemoType}.
-     */
+    
+    // COMPONENTES PRINCIPALES
+    private EVCompany company;
+    private List<ElectricVehicle> vehicles;
+    private List<ChargingStation> stations;
+    
+    // SELECCIÓN DEL ESCENARIO
     private static final DemoType DEMO = DemoType.ADVANCED;
-
+    
     /**
-     * Constructor para objetos de la clase EVDemo.
-     * Inicializa la compañía y las listas de vehículos y estaciones.
-     * Finalmente, llama a {@code reset()} para crear la configuración inicial.
+     * Constructor. Inicializa la simulación y resetea el estado.
      */
     public EVDemo() {
-        this.compania = new EVCompany();
-
-        this.vehiculos = new ArrayList<>();
-        this.estaciones = new ArrayList<>();
-
+        // Usamos el patrón Singleton para obtener la compañía.
+        this.company = EVCompany.getInstance();
+        this.vehicles = new ArrayList<>();
+        this.stations = new ArrayList<>();
         reset();
     }
-
+    
     /**
-     * Ejecuta la demo durante un número fijo de pasos (MAXSTEPS).
-     * En cada paso, todos los vehículos realizan su acción.
-     * Al finalizar, muestra la información final.
+     * Ejecuta el bucle principal de la simulación.
+     * EXTRA: ESCRITURA EN FICHERO
+     * 
+     * Este método redirige la salida estándar para que todo lo que se imprima por consola
+     * se guarde también en el fichero simulation_output.txt
      */
     public void run() {
-        for(int step = 0; step < MAXSTEPS; step++) {
-            step(step);
+        // 1. GUARDAMOS LA REFERENCIA A LA CONSOLA ORIGINAL PARA RESTAURARLA LUEGO
+        PrintStream consolaOriginal = System.out;
+        PrintStream ficheroStream = null;
+        
+        try {
+            // 2. CREAMOS EL FICHERO DE SALIDA
+            ficheroStream = new PrintStream(new FileOutputStream("simulation_output.txt"));
+            
+            // 3. ACTIVAMOS EL STREAM DUAL (CONSOLA + FICHERO)
+            DualPrintStream dualStream = new DualPrintStream(consolaOriginal, ficheroStream);
+            System.setOut(dualStream);
+            
+            // --- INICIO DE LA SIMULACIÓN ---
+            for (int step = 0; step < MAXSTEPS; step++) {
+                step(step);
+            }
+            showFinalInfo();
+            
+            // --- FIN DE LA SIMULACIÓN
+        } catch (FileNotFoundException e) {
+            // SI FALLA EL FICHERO, AVISAMOS PERO INTENTAMOS SEGUIR POR CONSOLA
+            System.setOut(consolaOriginal);
+            System.err.println("Error: no se pudo crear el fichero de salida.");
+            e.printStackTrace();
+        } finally {
+            // 4. IMPORTANTE: RESTAURAR SIEMPRE LA CONSOLA ORIGINAL AL TERMINAR
+            System.setOut(consolaOriginal);
+            if (ficheroStream != null) {
+                ficheroStream.close();
+            }
+            System.out.println("Simulación finaliza. Salida guardada en simulation_output.txt");
         }
-
-        showFinalInfo();
     }
-
+    
     /**
-     * Ejecuta UN paso de la demo, pidiendo a todos los vehículos que actúen.
-     * La actuación se hace en orden creciente de matrícula.
-     * @param step El número de paso o turno actual de la simulación.
+     * Ejecuta un único paso de la simulación.
      */
     public void step(int step) {
-        for (ElectricVehicle vehiculo : this.vehiculos) {
-            vehiculo.act(step);
+        
+        // 1. FASE DE ACTUACIÓN (POLIMORFISMO: CADA VEHÍCULO ACTÚA SEGÚN SU TIPO)
+        for (ElectricVehicle vehicle : this.vehicles) {
+            vehicle.act(step);
         }
-
-        for (ElectricVehicle vehiculo : this.vehiculos) {
-            System.out.println(vehiculo.getStepInfo(step));
+        
+        // 2. FASE DE REPORTE
+        for (ElectricVehicle vehicle : this.vehicles) {
+            System.out.println(vehicle.getStepInfo(step));
         }
     }
-
+    
     /**
-     * Reinicia la demo a su punto de partida.
-     * Limpia los vehículos y estaciones existentes, resetea la compañía
-     * y vuelve a crear la configuración inicial.
+     * Reinicia y reconfigura todo el entorno.
      */
     public void reset() {
-        this.vehiculos.clear();
-        this.estaciones.clear();
-
-        this.compania.reset();
-
+        this.vehicles.clear();
+        this.stations.clear();
+        this.company.reset();
+        
         createElectricVehicles();
         createStations();
         createChargers();
         configureRoutes();
         showInitialInfo();
     }
-
+    
     /**
-     * Crea los {@link ElectricVehicle}s según el escenario DEMO,
-     * les asigna localizaciones de inicio/destino y los añade a la compañía.
-     * Al final, ordena la lista de vehículos por matrícula.
+     * Crea los vehículos usando las subclases apropiadas.
      */
     private void createElectricVehicles() {
-        Location [] locations = {new Location(10, 13), new Location(8, 4), new Location(8, 4), new Location(5, 10), new Location(1, 1), new Location(2, 2), new Location (11, 13), new Location(14, 16)};
-        Location [] targetLocations = {new Location(1, 1), new Location(19, 19), new Location(12, 17), new Location(4, 4), new Location(1, 10), new Location(5, 5), new Location(8, 7), new Location(19, 19)};
+       Location [] locations = {new Location(1,1), new Location(1,1), new Location(1,19), new Location(1,19), 
+                                new Location(19,1), new Location(19,1), new Location(10,19), new Location(19,10),
+                                new Location(10,10), new Location(10,10)};
 
-        for (int i = 0; i < DEMO.getNumVehiclesToCreate(); i++) {
-            ElectricVehicle ev = new ElectricVehicle(compania, locations[i], targetLocations[i], ("EV"+i), (i+"CCC"), (i+1)*15);
-
-            this.vehiculos.add(ev);
-
-            this.compania.addElectricVehicle(ev);
+        Location [] targetLocations = {new Location(20,20), new Location(20,20), new Location(19,1), new Location(19,1), 
+                                       new Location(1,19), new Location(1,19), new Location(19,10), new Location(10,19),
+                                       new Location(10,20), new Location(20,10)};
+                                        
+        for (int i = 0; i < DEMO.getNumVehiclesToCreate(); i++){
+            // Lógica de rotación de tipos
+            VehicleTier[] tiposDisponibles = {VehicleTier.STANDARD, VehicleTier.PRIORITY, VehicleTier.VTC, VehicleTier.PREMIUM};
+            VehicleTier tipo = tiposDisponibles[i % tiposDisponibles.length];
+            
+            String nombre = "EV" + i;
+            String matricula = i + "CCC";
+            int capacidadBateria = (i + 1) * (20 - i);
+            
+            // --- USO DEL PATRÓN FACTORY ---
+            ElectricVehicle ev = VehicleFactory.createVehicle(tipo, company, locations[i], targetLocations[i], nombre, matricula, capacidadBateria);
+            
+            this.vehicles.add(ev);
+            this.company.addElectricVehicle(ev);
         }
-
-        this.vehiculos.sort( (v1, v2) ->
-                v1.getMatricula().compareTo(v2.getMatricula())
-        );
+        
+        this.vehicles.sort((v1, v2) -> v1.getMatricula().compareTo(v2.getMatricula()));
     }
-
+    
     /**
-     * Crea las {@link ChargingStation}s predefinidas y las añade a la compañía.
-     * Al final, ordena la lista de estaciones por ID.
+     * Crea las estaciones de carga.
      */
     private void createStations() {
-        // Localizaciones de las 4 estaciones
-        Location [] locations = {new Location(10,5), new Location(10,11), new Location(14,16), new Location(8,4)};
-
-        // Creamos el número de estaciones que indique la DEMO (siempre 4)
+        Location [] locations = {new Location(5,5), new Location(15,15), new Location(5,15), new Location(15,5), new Location(10,10)};
+                                
         for (int i = 0; i < DEMO.getNumStationsToCreate(); i++){
-            // Creamos la estación
-            ChargingStation nuevaEstacion = new ChargingStation("Cáceres", "CC0" + i, locations[i]);
-
-            // La añadimos a nuestra lista de demo
-            this.estaciones.add(nuevaEstacion);
-
-            // La AÑADIMOS a la compañía (requisito fuente 168)
-            this.compania.addChargingStation(nuevaEstacion);
+            // Usamos "Caceres" sin tilde
+            ChargingStation nuevaEstacion = new ChargingStation("Caceres", "CC0" + i, locations[i]);
+            this.stations.add(nuevaEstacion);
+            this.company.addChargingStation(nuevaEstacion);
         }
-
-        // ORDENAMOS la lista de estaciones por ID (requisito fuente 162)
-        // Usamos el comparador que ya hemos creado
-        this.estaciones.sort( (est1, est2) ->
-                est1.getId().compareTo(est2.getId())
-        );
+        
+        // Ordenar estaciones por ID
+        this.stations.sort((s1, s2) -> s1.getId().compareTo(s2.getId()));
     }
 
     /**
-     * Crea 4 {@link Charger} (cargadores) para CADA {@link ChargingStation}.
-     * El orden de los cargadores se gestiona automáticamente dentro de
-     * la clase ChargingStation (en su método 'addCharger').
-     * (fuente 169, 174)
+     * Crea y distribuye los diferentes tipos de cargadores.
      */
-    private void createChargers() {
-
-        // Recorremos CADA estación que hemos creado
-        for (ChargingStation station : this.estaciones){
-
-            // Creamos el número de cargadores que indique la DEMO (siempre 4)
+    private void createChargers() {  
+        List<ChargingStation> cityStations = company.getCityStations();
+        
+        int j = 0;
+        for (ChargingStation station : cityStations){
             for (int i = 0; i < DEMO.getNumChargersToCreate(); i++){
-                // (ID, Velocidad(kwh), Tarifa(€/kwh))
-                Charger nuevoCargador = new Charger(station.getId() + "_00" + i, ((i+1)*20), ((i+1)*0.20f));
+                
+                String idCargador = station.getId() + "_00" + i;
+                int velocidad = (i + j + 1) * 20;
+                float tarifa = (i + 1) * 0.20f;
+                
+                // Determinamos el tipo de cargador
+                int numCargadores = DEMO.getNumChargersToCreate();
+                int numEstaciones = DEMO.getNumStationsToCreate();
+                ChargerFactory.ChargerType tipoCargador;
 
-                // Añadimos el cargador a la estación
-                station.addCharger(nuevoCargador);
+                if (i % numCargadores == (j % numEstaciones - 1)) {
+                    tipoCargador = ChargerFactory.ChargerType.SOLAR;
+                }    
+                else if (i % numCargadores == (j % numEstaciones)) {
+                    tipoCargador = ChargerFactory.ChargerType.ULTRAFAST;
+                } 
+                else if (i % numCargadores == (j % numEstaciones) + 1) {
+                    tipoCargador = ChargerFactory.ChargerType.PRIORITY;
+                }    
+                else {
+                    tipoCargador = ChargerFactory.ChargerType.STANDARD;
+                }
+                
+                // --- USO DEL PATRÓN FACTORY ---
+                Charger ch = ChargerFactory.createCharger(tipoCargador, idCargador, velocidad, tarifa);
+                
+                station.addCharger(ch);
             }
-            // NOTA: La ordenación de los cargadores (fuente 174)
-            // se realiza DENTRO del método 'station.addCharger()',
-            // tal como lo implementamos en ChargingStation.java.
-            // No es necesario hacer nada más aquí.
-        }
+            j++;
+        }  
     }
-
-
-    /**
-     * Pide a cada {@link ElectricVehicle} que calcule su ruta inicial.
-     * Esto determina si necesitan una parada de recarga intermedia
-     * antes de empezar a moverse.
-     */
+    
     private void configureRoutes() {
-        // Recorremos todos los vehículos
-        for (ElectricVehicle vehiculo : this.vehiculos) {
-            // Cada vehículo calcula si necesita ir a una estación
-            // o puede ir directo a su destino final.
+        for (ElectricVehicle vehiculo : this.vehicles) {
             vehiculo.calculateRoute();
         }
     }
-
-    /**
-     * Muestra la información INICIAL de la simulación por consola.
-     * Sigue el formato del Anexo I (fuente 170-175, 297).
-     * Muestra la compañía, los vehículos (ordenados por matrícula)
-     * y las estaciones (ordenadas por ID) con sus cargadores (ordenados por criterios).
-     */
+    
     private void showInitialInfo() {
-        System.out.println("( "+compania.getName()+" )");
+        System.out.println("( Compania EVCharging Caceres )");
         System.out.println("(-------------------)");
         System.out.println("( Electric Vehicles )");
         System.out.println("(-------------------)");
-
-        // Recorremos los vehículos (ya están ordenados por matrícula, fuente 172)
-        for (ElectricVehicle vehiculo : this.vehiculos) {
+        
+        for (ElectricVehicle vehiculo : this.vehicles) {
             System.out.println(vehiculo.getInitialFinalInfo());
         }
 
         System.out.println("(-------------------)");
         System.out.println("( Charging Stations )");
         System.out.println("(-------------------)");
-
-        // Recorremos las estaciones (ya están ordenadas por ID, fuente 173)
-        for (ChargingStation estacion : this.estaciones) {
-            // Imprimimos la línea de la estación
-            System.out.println(estacion.toString());
-
-            // Recorremos sus cargadores (ya están ordenados por la estación, fuente 174)
+       
+        for (ChargingStation estacion : this.stations) {
+            System.out.println(estacion.toString()); 
+            // Mostramos los cargadores (usarán su toString específico: StandardCharger, etc.)
             for (Charger cargador : estacion.getChargers()) {
-                // Imprimimos la línea del cargador
                 System.out.println(cargador.toString());
             }
         }
-
+        
         System.out.println("(------------------)");
         System.out.println("( Simulation start )");
         System.out.println("(------------------)");
     }
 
-    /**
-     * Muestra la información FINAL de la simulación por consola.
-     * Sigue el formato del Anexo I (fuente 185-188, 485).
-     * Muestra los vehículos (ordenados por turno de llegada)
-     * y las estaciones (ordenadas por nº de recargas) con sus cargadores
-     * y los vehículos que recargaron en ellos.
-     */
     private void showFinalInfo() {
-
         System.out.println("(-------------------)");
-        System.out.println("( Final information )");
+        System.out.println("( Final information )");        
         System.out.println("(-------------------)");
 
         System.out.println("(-------------------)");
         System.out.println("( Electric Vehicles )");
         System.out.println("(-------------------)");
-
-        // ORDENAMOS los vehículos por turno de llegada (requisito fuente 186)
-        // Usamos una expresión Lambda para el comparador (Extra, fuente 245)
-        this.vehiculos.sort( (v1, v2) -> {
-            // "Si un vehículo no ha llegado, es el último" (fuente 524)
-            // Asignamos un valor "infinito" si getArrivingStep() es -1
+        
+        // Ordenar vehículos: Turno llegada (asc) -> Matrícula (asc)
+        this.vehicles.sort((v1, v2) -> {
             int turno1 = (v1.getArrivingStep() == -1) ? Integer.MAX_VALUE : v1.getArrivingStep();
             int turno2 = (v2.getArrivingStep() == -1) ? Integer.MAX_VALUE : v2.getArrivingStep();
-
-            // Criterio 1: Ordenar por turno de llegada
-            if (turno1 != turno2) {
-                return Integer.compare(turno1, turno2); // Orden creciente
-            }
-
-            // Desempate: Ordenar por matrícula (creciente) (fuente 186)
+            
+            if (turno1 != turno2) return Integer.compare(turno1, turno2);
             return v1.getMatricula().compareTo(v2.getMatricula());
         });
-
-        // Imprimimos los vehículos ya ordenados
-        for (ElectricVehicle vehiculo : this.vehiculos) {
+        
+        for (ElectricVehicle vehiculo : this.vehicles) {
             System.out.println(vehiculo.getInitialFinalInfo());
         }
 
         System.out.println("(-------------------)");
         System.out.println("( Charging Stations )");
         System.out.println("(-------------------)");
-
-        // ORDENAMOS las estaciones por número de recargas (requisito fuente 187)
-        // Usamos el comparador que ya hemos creado (Extra, fuente 246)
-        this.estaciones.sort(new ComparatorChargingStationNumberRecharged());
-
-        // Imprimimos las estaciones ya ordenadas
-        for (ChargingStation estacion : this.estaciones) {
-            // Usamos el método getCompleteInfo() que diseñamos en ChargingStation
-            // para mostrar la info de la estación, sus cargadores, y los
-            // vehículos de cada cargador (requisito fuente 188)
+       
+        // Ordenar estaciones: Nº recargas (desc) -> ID (asc)
+        this.stations.sort((s1, s2) -> {
+            int recargas1 = s1.getNumerEVRecharged();
+            int recargas2 = s2.getNumerEVRecharged();
+            if (recargas1 != recargas2) return Integer.compare(recargas2, recargas1);
+            return s1.getId().compareTo(s2.getId());
+        });
+        
+        for (ChargingStation estacion : this.stations) {
             System.out.println(estacion.getCompleteInfo());
         }
+        
+        // --- NUEVO REQUISITO: Mostrar info de la compañía (notificaciones) ---
+        company.showCompanyInfo();
     }
-
-
-    /**
-     * El punto de entrada principal para ejecutar la simulación.
-     * Crea una instancia de {@code EVDemo} e inicia la simulación.
-     */
+    
     public static void main() {
         EVDemo demo = new EVDemo();
         demo.run();
+    }
+    
+    // --- CLASE INTERNA PARA EL STREAM DUAL ---
+    /**
+     * Clase auxiliar que redirige la salida a dos flujos simultáneamente:
+     * la consola original y un fichero.
+     */
+    private static class DualPrintStream extends PrintStream {
+        private final PrintStream segundoStream;
+        
+        public DualPrintStream(PrintStream principal, PrintStream segundo) {
+            super(principal);
+            this.segundoStream = segundo;
+        }
+        
+        @Override
+        public void write(byte[] buf, int off, int len) {
+            super.write(buf, off, len); // ESCRIBE EN CONSOLA
+            segundoStream.write(buf, off, len); // ESCRIBE EN FICHERO
+        }
+        
+        @Override
+        public void flush() {
+            super.flush();
+            segundoStream.flush();
+        }
+        
+        @Override
+        public void close() {
+            super.close();
+            segundoStream.close();
+        }
     }
 }

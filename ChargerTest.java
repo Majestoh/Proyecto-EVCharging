@@ -1,92 +1,112 @@
 import static org.junit.Assert.*;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Pruebas unitarias para la clase {@link Charger}.
- * Requisito extra (fuente 254).
+ * Clase de pruebas para la jerarquía Charger.
+ * Prueba compatibilidad, cálculo de costes (descuentos/recargos) y métricas.
  *
- * @author IA para docencia
- * @version 2025.11.04
+ * @author DP classes (Modificado por IA para docencia)
+ * @version 2025.11.18
  */
 public class ChargerTest
 {
-    // --- Fixtures (fuente 264) ---
-    // Objetos que usaremos en las pruebas
+    // Cargadores
+    private Charger standardCharger;
+    private Charger solarCharger;
+    private Charger ultraFastCharger;
+    private Charger priorityCharger;
     
-    private Charger cargadorPrueba;
-    private ElectricVehicle evPrueba;
+    // Vehículos (Mocks o reales simplificados para probar compatibilidad)
+    private ElectricVehicle standardEV;
+    private ElectricVehicle vtcEV;
+    private ElectricVehicle premiumEV;
+    private ElectricVehicle priorityEV;
     
-    /**
-     * Constructor por defecto para la clase de prueba ChargerTest
-     */
-    public ChargerTest()
-    {
-    }
+    private EVCompany company;
 
-    /**
-     * Prepara el entorno de prueba (Fixtures).
-     * Se llama ANTES de cada método de prueba (@Test).
-     */
     @Before
     public void setUp()
     {
-        // 1. Crear un cargador para la prueba
-        // (ID: "Test_01", Velocidad: 50kwh, Tarifa: 0.5 €/kwh)
-        cargadorPrueba = new Charger("Test_01", 50, 0.5f);
+        // Necesitamos la compañía (Singleton) y ubicaciones dummy
+        company = EVCompany.getInstance();
+        company.reset();
+        Location loc = new Location(0,0);
         
-        // 2. Crear un EV (necesita objetos auxiliares)
-        EVCompany company = new EVCompany();
-        Location loc1 = new Location(0, 0);
-        Location loc2 = new Location(5, 5);
-        // (Capacidad de 100kwh)
-        evPrueba = new ElectricVehicle(company, loc1, loc2, "TestEV", "1234ABC", 100);
+        // Inicializamos Cargadores (Velocidad 100, Tarifa 1.0€ para facilitar cálculos)
+        standardCharger = new StandardCharger("STD_01", 100, 1.0f);
+        solarCharger = new SolarCharger("SOL_01", 100, 1.0f);
+        ultraFastCharger = new UltraFastCharger("ULT_01", 100, 1.0f);
+        priorityCharger = new PriorityCharger("PRI_01", 100, 1.0f);
+        
+        // Inicializamos Vehículos
+        standardEV = new StandardEV(company, loc, loc, "Std", "0000", 100);
+        vtcEV = new VtcEV(company, loc, loc, "Vtc", "1111", 100);
+        premiumEV = new PremiumEV(company, loc, loc, "Prm", "2222", 100);
+        priorityEV = new PriorityEV(company, loc, loc, "Pri", "3333", 100);
     }
 
     /**
-     * Limpia el entorno de prueba.
-     * Se llama DESPUÉS de cada método de prueba (@Test).
-     */
-    @After
-    public void tearDown()
-    {
-        // Ponemos los objetos a null para liberar memoria
-        cargadorPrueba = null;
-        evPrueba = null;
-    }
-
-    /**
-     * Prueba el método 'recharge' de la clase Charger (fuente 255).
-     * Comprueba:
-     * 1. Que el coste devuelto sea correcto.
-     * 2. Que la cantidad recaudada por el cargador se actualice.
-     * 3. Que el vehículo se añada a la lista de vehículos recargados.
+     * Prueba la compatibilidad de vehículos con cargadores [Requisito Extra].
      */
     @Test
-    public void testRecharge()
+    public void testCompatibility()
     {
-        // --- 1. Definición del escenario ---
-        // Vamos a simular una recarga de 30 kwh.
-        int kwhARecargar = 30;
+        // StandardCharger: Acepta Standard y VTC
+        assertNotEquals(-1.0f, standardCharger.recharge(standardEV, 10), 0.01);
+        assertNotEquals(-1.0f, standardCharger.recharge(vtcEV, 10), 0.01);
+        assertEquals(-1.0f, standardCharger.recharge(premiumEV, 10), 0.01); // No compatible
         
-        // Coste esperado: 30 kwh * 0.5 €/kwh = 15.0 €
-        float costeEsperado = 15.0f;
-
-        // --- 2. Ejecución ---
-        // Llamamos al método que queremos probar
-        float costeReal = cargadorPrueba.recharge(evPrueba, kwhARecargar);
-
-        // --- 3. Comprobación (Aserciones) ---
+        // PriorityCharger: Solo Priority
+        assertEquals(-1.0f, priorityCharger.recharge(standardEV, 10), 0.01);
+        assertNotEquals(-1.0f, priorityCharger.recharge(priorityEV, 10), 0.01);
         
-        // Aserción 1: ¿Es el coste devuelto el esperado?
-        // Usamos un 'delta' (0.01) para comparar floats
-        assertEquals(costeEsperado, costeReal, 0.01);
-
-        // Aserción 2: ¿Se ha actualizado la cantidad recaudada?
-        assertEquals(costeEsperado, cargadorPrueba.getCantidadRecaudada(), 0.01);
+        // SolarCharger: Solo VTC
+        assertEquals(-1.0f, solarCharger.recharge(standardEV, 10), 0.01);
+        assertNotEquals(-1.0f, solarCharger.recharge(vtcEV, 10), 0.01);
         
-        // Aserción 3: ¿Se ha contado el vehículo?
-        assertEquals(1, cargadorPrueba.getNumerEVRecharged());
+        // UltraFastCharger: Solo Premium
+        assertEquals(-1.0f, ultraFastCharger.recharge(vtcEV, 10), 0.01);
+        assertNotEquals(-1.0f, ultraFastCharger.recharge(premiumEV, 10), 0.01);
+    }
+
+    /**
+     * Prueba el cálculo de costes incluyendo descuentos y recargos [Requisito Extra].
+     * Base: 10 kwh * 1.0€ tarifa = 10.0€
+     */
+    @Test
+    public void testRechargeCostCalculation()
+    {
+        int kwh = 10;
+        
+        // 1. Standard: Coste base (10.0€)
+        float costeStd = standardCharger.recharge(standardEV, kwh);
+        assertEquals(10.0f, costeStd, 0.01);
+        
+        // 2. Solar: Descuento 10% (9.0€)
+        float costeSolar = solarCharger.recharge(vtcEV, kwh);
+        assertEquals(9.0f, costeSolar, 0.01);
+        
+        // 3. UltraFast: Recargo 10% (11.0€)
+        float costeUltra = ultraFastCharger.recharge(premiumEV, kwh);
+        assertEquals(11.0f, costeUltra, 0.01);
+        
+        // 4. Priority: Coste base (10.0€)
+        float costePri = priorityCharger.recharge(priorityEV, kwh);
+        assertEquals(10.0f, costePri, 0.01);
+    }
+    
+    /**
+     * Prueba que las métricas (dinero recaudado y lista de vehículos) se actualicen.
+     */
+    @Test
+    public void testRechargeMetrics()
+    {
+        standardCharger.recharge(standardEV, 10); // Coste 10.0
+        standardCharger.recharge(vtcEV, 5);       // Coste 5.0
+        
+        assertEquals(15.0f, standardCharger.getCantidadRecaudada(), 0.01);
+        assertEquals(2, standardCharger.getNumerEVRecharged());
     }
 }
+
